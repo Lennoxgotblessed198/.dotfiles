@@ -1,0 +1,51 @@
+## Configuration file for CAVA.
+# Remove the ; to change parameters.
+
+[general]
+
+framerate = 60
+autosens = 1
+bars = 0
+bar_width = 2
+bar_spacing = 1
+center_align = 1
+max_height = 100
+
+[input]
+
+method = pulse
+source = auto
+
+[output]
+
+method = noncurses
+channels = stereo
+orientation = bottom
+synchronized_sync = 1
+
+[color]
+
+background = default
+foreground = default
+
+gradient = 1
+gradient_color_1 = '#000000'   ; black
+gradient_color_2 = '#222222'   ; very dark gray
+gradient_color_3 = '#444444'   ; dark gray
+gradient_color_4 = '#666666'   ; medium gray
+gradient_color_5 = '#888888'   ; light gray
+gradient_color_6 = '#aaaaaa'   ; lighter gray
+gradient_color_7 = '#cccccc'   ; near white
+gradient_color_8 = '#ffffff'   ; white
+
+[smoothing]
+
+noise_reduction = 77
+
+[eq]
+
+1 = 1
+2 = 1
+3 = 1
+4 = 1
+5 = 1

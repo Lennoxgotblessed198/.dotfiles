@@ -8,7 +8,7 @@ REPO_DIR="$SCRIPT_DIR"
 CONFIG_DIR="$HOME/.config"
 BACKUP_ROOT="$CONFIG_DIR/.dotfiles_backup_$(date +%Y%m%d-%H%M%S)"
 HAD_BACKUP=0
-ACTION="${1:-}"  # will be decided by menu if empty; supports: install | update | grub
+ACTION="${1:-}"
 THEMES_DIR="$REPO_DIR/themes"
 CHOSEN_COLOR_PATH=""
 GRUB_THEMES_BASE="$REPO_DIR/boot_manager"
@@ -25,7 +25,7 @@ trap 'err "Error at line $LINENO: $BASH_COMMAND"; err "Setup aborted."' ERR
 require_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 choose_action() {
-	# If ACTION provided via CLI, normalize and return
+
 	case "${ACTION,,}" in
 		1|install) ACTION="install" ;;
 		2|update)  ACTION="update" ;;
@@ -57,7 +57,7 @@ preflight() {
 	if [[ $EUID -eq 0 ]]; then
 		warn "Running as root: configs will target /root. It's recommended to run as your user."
 	else
-		# Request sudo only when needed
+
 		if [[ "$ACTION" == "install" || "$ACTION" == "grub" ]]; then
 			printf "%b[AUTH]%b Requesting administrator privileges (sudo) for this action...\n" "$C_BLUE" "$C_RESET"
 			if sudo -v; then
@@ -72,18 +72,10 @@ preflight() {
 	printf "%b%s%b\n" "$C_CYAN" "This is an experimental setup script tailored for Arch-based systems." "$C_RESET"
 	printf "%b%s%b\n" "$C_CYAN" "For best results, you may also apply the files manually; this script automates those steps safely." "$C_RESET"
 
-	# Ask theme color early (before countdown)
 	case "$ACTION" in
 		install|update)
 			if [[ -z "$CHOSEN_COLOR_PATH" ]]; then
 				choose_color
-			fi
-			# For update, we may still need sudo to set default shell to zsh or install zsh if missing
-			if [[ "$ACTION" == "update" ]]; then
-				if ! require_cmd zsh || [[ "$(basename -- "${SHELL:-}")" != "zsh" ]]; then
-					printf "%b[AUTH]%b Requesting administrator privileges (sudo) to ensure zsh is installed and set as default...\n" "$C_BLUE" "$C_RESET"
-					sudo -v || { err "Sudo is required to ensure zsh"; exit 1; }
-				fi
 			fi
 			;;
 		grub)
@@ -110,7 +102,6 @@ preflight() {
 	for n in 3 2 1; do log "$n..."; sleep 1; done
 }
 
-# --- Theme discovery & selection ---
 find_colors() {
 	local colors=()
 	if [[ -d "$THEMES_DIR" ]]; then
@@ -157,10 +148,9 @@ choose_color() {
 	ok "Selected theme: $(basename "$CHOSEN_COLOR_PATH")"
 }
 
-# --- GRUB theme discovery & selection ---
 find_grub_themes() {
 	local candidates=()
-	# Common patterns: boot_manager/<theme>/install.sh OR boot_manager/**/install.sh
+
 	if [[ -d "$GRUB_THEMES_BASE" ]]; then
 		while IFS= read -r -d '' script; do
 			local dir; dir="$(dirname "$script")"
@@ -223,20 +213,18 @@ copy_dir() {
 	backup_path "$dest"
 	mkdir -p "$(dirname "$dest")"
 	cp -a "$src" "$dest"
-	# Ensure all shell scripts are executable after copy
+
 	if [[ -d "$dest" ]]; then
 		find "$dest" -type f -name "*.sh" -exec chmod +x {} + || true
 	fi
 }
 
-# Compare two files; return 0 if identical, 1 if different or missing
 files_identical() {
 	local a="$1" b="$2"
 	[[ -f "$a" && -f "$b" ]] || return 1
 	cmp -s "$a" "$b" 2>/dev/null && return 0 || return 1
 }
 
-# Update copy for a single file: copy if missing or different, backup if replacing
 update_copy_file() {
 	local src="$1" dest="$2"
 	if [[ ! -e "$dest" ]]; then
@@ -263,7 +251,6 @@ update_copy_file() {
 	ok "Updated: $dest"
 }
 
-# Update copy for a directory: copy files that are missing or changed (no deletions)
 update_copy_dir() {
 	local src="$1" dest="$2"
 	[[ -d "$src" ]] || { warn "Source directory missing: $src"; return 0; }
@@ -353,34 +340,32 @@ install_aur_packages() {
 	fi
 }
 
-# Ensure zsh is installed and set as the default login shell for the current user
-ensure_zsh_ready() {
-	local need_sudo=0
-	if ! require_cmd zsh; then
-		if require_cmd pacman; then
-			log "Installing zsh"
-			sudo pacman -S --needed --noconfirm zsh
-			ok "zsh installed"
-		else
-			err "zsh not found and pacman not available; cannot install"
-			return 1
-		fi
+ensure_zsh_installed() {
+	if require_cmd zsh; then return 0; fi
+	if [[ "$ACTION" != "install" ]]; then
+		warn "zsh not found; skipping install during update"
+		return 0
 	fi
-
-	local zsh_path
-	zsh_path="$(command -v zsh)"
-	if [[ -z "$zsh_path" ]]; then
-		err "Failed to locate zsh after installation"
+	if require_cmd pacman; then
+		log "Installing zsh"
+		sudo pacman -S --needed --noconfirm zsh
+		ok "zsh installed"
+	else
+		err "pacman not available; cannot install zsh"
 		return 1
 	fi
+}
 
-	# Ensure zsh is listed in /etc/shells
+set_default_shell_zsh() {
+	local zsh_path
+	zsh_path="$(command -v zsh || true)"
+	[[ -n "$zsh_path" ]] || { warn "zsh binary not found; cannot set default shell"; return 0; }
+
 	if ! grep -q "^$zsh_path$" /etc/shells 2>/dev/null; then
 		log "Registering $zsh_path in /etc/shells"
 		echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null || warn "Could not add $zsh_path to /etc/shells"
 	fi
 
-	# Set default shell to zsh for the invoking user
 	local target_user="$USER"
 	if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" ]]; then
 		target_user="$SUDO_USER"
@@ -433,14 +418,10 @@ deploy_configs() {
 		ok "Deployed rofi config"
 	fi
 
-	# waybar scripts executable
 	make_exec_in "$CONFIG_DIR/waybar/scripts"
 
-	# zsh
-	# handled by deploy_base_configs
 }
 
-# In-place update of configs: only changed/missing files are copied; no mass backups.
 update_configs() {
 	ensure_dirs
 
@@ -475,14 +456,10 @@ update_configs() {
 		ok "Updated rofi config"
 	fi
 
-	# waybar scripts executable
 	make_exec_in "$CONFIG_DIR/waybar/scripts"
 
-	# zsh
-	# handled by deploy_base_configs
 }
 
-# Deploy only the chosen color theme (copy/backup behavior)
 deploy_color_configs() {
 	ensure_dirs
 	local base="$1"
@@ -499,7 +476,6 @@ deploy_color_configs() {
 	make_exec_in "$CONFIG_DIR/waybar/scripts"
 }
 
-# Update only the chosen color theme (in-place; no mass deletes)
 update_color_configs() {
 	ensure_dirs
 	local base="$1"
@@ -516,10 +492,12 @@ update_color_configs() {
 	make_exec_in "$CONFIG_DIR/waybar/scripts"
 }
 
-# Always-deployed base configs (non-themed)
 deploy_base_configs() {
-	# Always ensure zsh is present and default
-	ensure_zsh_ready || true
+
+	ensure_zsh_installed || true
+	if [[ "$ACTION" == "install" ]]; then
+		set_default_shell_zsh || true
+	fi
 	if [[ -f "$REPO_DIR/zsh/zshrc" ]]; then
 		update_copy_file "$REPO_DIR/zsh/zshrc" "$HOME/.zshrc"
 		ok "Ensured ~/.zshrc"
@@ -531,7 +509,7 @@ deploy_base_configs() {
 }
 
 post_steps() {
-	# Refresh font cache if fonts were installed
+
 	if fc-cache -V >/dev/null 2>&1; then
 		log "Refreshing font cache"
 		if fc-cache -f; then
@@ -542,7 +520,6 @@ post_steps() {
 	fi
 }
 
-# Optionally install GRUB theme provided in this repo
 maybe_install_grub_theme() {
 	local base_dir
 	base_dir="${1:-$GRUB_SELECTED_PATH}"
@@ -550,12 +527,10 @@ maybe_install_grub_theme() {
 	local install_sh="$base_dir/install.sh"
 	local patch_sh="$base_dir/patch_entries.sh"
 
-	# Ensure scripts exist
 	[[ -f "$install_sh" ]] || { warn "Missing: $install_sh"; return 0; }
 	[[ -f "$patch_sh" ]] || { warn "Missing: $patch_sh"; return 0; }
 	chmod +x "$install_sh" "$patch_sh" 2>/dev/null || true
 
-	# Inform user if GRUB may be missing (non-blocking)
 	if ! require_cmd grub-install && ! pacman -Q grub >/dev/null 2>&1 && [[ ! -d /boot/grub ]]; then
 		warn "GRUB may not be installed or detected on this system. Proceeding anyway as requested."
 	fi

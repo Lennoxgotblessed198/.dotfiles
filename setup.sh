@@ -8,6 +8,7 @@ REPO_DIR="$SCRIPT_DIR"
 CONFIG_DIR="$HOME/.config"
 BACKUP_ROOT="$CONFIG_DIR/.dotfiles_backup_$(date +%Y%m%d-%H%M%S)"
 HAD_BACKUP=0
+ACTION="${1:-}"  # will be decided by menu if empty; supports: install | update | grub
 
 C_RESET="\033[0m"; C_RED="\033[1;31m"; C_GREEN="\033[1;32m"; C_YELLOW="\033[1;33m"; C_BLUE="\033[1;34m"; C_CYAN="\033[1;36m"
 log()  { printf "%b[INFO]%b %s\n" "$C_CYAN" "$C_RESET" "$*"; }
@@ -19,24 +20,61 @@ trap 'err "Error at line $LINENO: $BASH_COMMAND"; err "Setup aborted."' ERR
 
 require_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+choose_action() {
+	# If ACTION provided via CLI, normalize and return
+	case "${ACTION,,}" in
+		1|install) ACTION="install" ;;
+		2|update)  ACTION="update" ;;
+		3|grub|grub-theme|grub_theme) ACTION="grub" ;;
+		"") ;;
+		*) warn "Unknown action: $ACTION. Defaulting to menu."; ACTION="" ;;
+	esac
+
+	if [[ -n "$ACTION" ]]; then
+		return 0
+	fi
+
+	printf "%b%s%b\n" "$C_CYAN" "Select an action:" "$C_RESET"
+	printf "  1) Install (packages + deploy configs)\n"
+	printf "  2) Update configs (no package installs)\n"
+	printf "  3) Install GRUB theme only\n"
+	printf "%b[PROMPT]%b Enter choice [1-3]: " "$C_YELLOW" "$C_RESET"
+	read -r choice
+	case "$choice" in
+		1) ACTION="install" ;;
+		2) ACTION="update" ;;
+		3) ACTION="grub" ;;
+		*) warn "Invalid choice. Defaulting to Install."; ACTION="install" ;;
+	esac
+}
+
 preflight() {
 
 	if [[ $EUID -eq 0 ]]; then
 		warn "Running as root: configs will target /root. It's recommended to run as your user."
 	else
-		printf "%b[AUTH]%b Requesting administrator privileges (sudo) for package installation...\n" "$C_BLUE" "$C_RESET"
-		if sudo -v; then
-			ok "Sudo credentials cached"
-		else
-			err "Sudo is required for installation. Aborting."
-			exit 1
+		# Request sudo only when needed
+		if [[ "$ACTION" == "install" || "$ACTION" == "grub" ]]; then
+			printf "%b[AUTH]%b Requesting administrator privileges (sudo) for this action...\n" "$C_BLUE" "$C_RESET"
+			if sudo -v; then
+				ok "Sudo credentials cached"
+			else
+				err "Sudo is required for this action. Aborting."
+				exit 1
+			fi
 		fi
 	fi
 
 	printf "%b%s%b\n" "$C_CYAN" "This is an experimental setup script tailored for Arch-based systems." "$C_RESET"
 	printf "%b%s%b\n" "$C_CYAN" "For best results, you may also apply the files manually; this script automates those steps safely." "$C_RESET"
 
-	printf "%b[PROMPT]%b Proceed with system update and configuration deployment? [y/N]: " "$C_YELLOW" "$C_RESET"
+	if [[ "$ACTION" == "update" ]]; then
+		printf "%b[PROMPT]%b Proceed with IN-PLACE config update (no package installation)? [y/N]: " "$C_YELLOW" "$C_RESET"
+	elif [[ "$ACTION" == "grub" ]]; then
+		printf "%b[PROMPT]%b Proceed with GRUB theme installation? [y/N]: " "$C_YELLOW" "$C_RESET"
+	else
+		printf "%b[PROMPT]%b Proceed with system update and configuration deployment? [y/N]: " "$C_YELLOW" "$C_RESET"
+	fi
 	read -r reply
 	case "$reply" in
 		[yY]|[yY][eE][sS]) ;;
@@ -75,6 +113,45 @@ copy_dir() {
 	backup_path "$dest"
 	mkdir -p "$(dirname "$dest")"
 	cp -a "$src" "$dest"
+}
+
+# Compare two files; return 0 if identical, 1 if different or missing
+files_identical() {
+	local a="$1" b="$2"
+	[[ -f "$a" && -f "$b" ]] || return 1
+	cmp -s "$a" "$b" 2>/dev/null && return 0 || return 1
+}
+
+# Update copy for a single file: copy if missing or different, backup if replacing
+update_copy_file() {
+	local src="$1" dest="$2"
+	if [[ ! -e "$dest" ]]; then
+		mkdir -p "$(dirname "$dest")"
+		install -m 0644 "$src" "$dest"
+		ok "Added: $dest"
+		return 0
+	fi
+	if files_identical "$src" "$dest"; then
+		log "Unchanged: $dest"
+		return 0
+	fi
+	backup_path "$dest"
+	mkdir -p "$(dirname "$dest")"
+	install -m 0644 "$src" "$dest"
+	ok "Updated: $dest"
+}
+
+# Update copy for a directory: copy files that are missing or changed (no deletions)
+update_copy_dir() {
+	local src="$1" dest="$2"
+	[[ -d "$src" ]] || { warn "Source directory missing: $src"; return 0; }
+	mkdir -p "$dest"
+	local f rel to
+	while IFS= read -r -d '' f; do
+		rel="${f#"$src/"}"
+		to="$dest/$rel"
+		update_copy_file "$f" "$to"
+	done < <(find "$src" -type f -print0)
 }
 
 make_exec_in() {
@@ -198,6 +275,51 @@ deploy_configs() {
 	fi
 }
 
+# In-place update of configs: only changed/missing files are copied; no mass backups.
+update_configs() {
+	ensure_dirs
+
+	# btop
+	if [[ -f "$REPO_DIR/btop/btop.conf" ]]; then
+		update_copy_dir "$REPO_DIR/btop" "$CONFIG_DIR/btop"
+		ok "Updated btop config"
+	fi
+
+	# cava
+	if [[ -f "$REPO_DIR/cava/config" ]]; then
+		update_copy_dir "$REPO_DIR/cava" "$CONFIG_DIR/cava"
+		ok "Updated cava config"
+	fi
+
+	# kitty
+	if [[ -f "$REPO_DIR/kitty/kitty.conf" ]]; then
+		update_copy_dir "$REPO_DIR/kitty" "$CONFIG_DIR/kitty"
+		ok "Updated kitty config"
+	fi
+
+	# hypr, waybar, swaync
+	if [[ -d "$REPO_DIR/hypr" ]]; then update_copy_dir "$REPO_DIR/hypr" "$CONFIG_DIR/hypr"; ok "Updated hypr config"; fi
+	if [[ -d "$REPO_DIR/waybar" ]]; then update_copy_dir "$REPO_DIR/waybar" "$CONFIG_DIR/waybar"; ok "Updated waybar config"; fi
+	if [[ -d "$REPO_DIR/swaync" ]]; then update_copy_dir "$REPO_DIR/swaync" "$CONFIG_DIR/swaync"; ok "Updated swaync config"; fi
+
+	# rofi
+	if [[ -d "$REPO_DIR/rofi" ]]; then
+		update_copy_dir "$REPO_DIR/rofi" "$CONFIG_DIR/rofi"
+		make_exec_in "$CONFIG_DIR/rofi/scripts"
+		make_exec_in "$CONFIG_DIR/rofi/applets/bin"
+		ok "Updated rofi config"
+	fi
+
+	# waybar scripts executable
+	make_exec_in "$CONFIG_DIR/waybar/scripts"
+
+	# zsh
+	if [[ -f "$REPO_DIR/zsh/zshrc" ]]; then
+		update_copy_file "$REPO_DIR/zsh/zshrc" "$HOME/.zshrc"
+		ok "Updated .zshrc"
+	fi
+}
+
 post_steps() {
 	# Refresh font cache if fonts were installed
 	if fc-cache -V >/dev/null 2>&1; then
@@ -216,10 +338,17 @@ maybe_install_grub_theme() {
 	local install_sh="$theme_dir/install.sh"
 	local patch_sh="$theme_dir/patch_entries.sh"
 
-	printf "%b[PROMPT]%b Are you using GRUB as your boot manager and want to install the provided theme now? [y/N]: " "$C_YELLOW" "$C_RESET"
-	read -r reply
-	case "$reply" in
-		[yY]|[yY][eE][sS])
+	# If called with "force", skip prompt
+	local force="${1:-}"
+	if [[ "$force" != "force" ]]; then
+		printf "%b[PROMPT]%b Are you using GRUB as your boot manager and want to install the provided theme now? [y/N]: " "$C_YELLOW" "$C_RESET"
+		read -r reply
+		case "$reply" in
+			[yY]|[yY][eE][sS]) ;;
+			*) log "Skipping GRUB theme installation"; return 0 ;;
+		esac
+	fi
+
 			if [[ ! -d "$theme_dir" ]]; then
 				warn "GRUB theme directory not found: $theme_dir"
 				return 0
@@ -249,25 +378,33 @@ maybe_install_grub_theme() {
 			else
 				warn "Patching GRUB entries failed"
 			fi
-			;;
-		*)
-			log "Skipping GRUB theme installation"
-			;;
-	esac
+	return 0
 }
 
 main() {
-	log "Starting dotfiles setup from: $REPO_DIR"
-	install_pacman_packages
-	install_aur_packages
-	deploy_configs
-	post_steps
-	maybe_install_grub_theme
+	log "Starting dotfiles setup from: $REPO_DIR (action: $ACTION)"
+	case "$ACTION" in
+		update)
+			update_configs
+			post_steps
+			;;
+		grub)
+			maybe_install_grub_theme force
+			;;
+		install|*)
+			install_pacman_packages
+			install_aur_packages
+			deploy_configs
+			post_steps
+			;;
+	 esac
+
 	if [[ "$HAD_BACKUP" -eq 1 ]]; then
 		warn "Existing configs were backed up to: $BACKUP_ROOT"
 	fi
-	ok "Setup completed successfully"
+	ok "Action completed successfully"
 }
 
+choose_action
 preflight
 main "$@"

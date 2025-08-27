@@ -1,0 +1,23 @@
+{
+  "positionX": "right",
+  "positionY": "top",
+  "control-center-margin-top": 10,
+  "control-center-margin-bottom": 10,
+  "control-center-margin-right": 10,
+  "control-center-margin-left": 10,
+  "notification-plugins": [],
+  "layer": "overlay",
+  "control-center-width": 400,
+  "notification-window-width": 350,
+  "notification-animations": true,
+  "notification-animation-time": 200,
+  "image-visibility": "always",
+  "transition-type": "slide",
+  "transition-duration": 200,
+  "hide-on-clear": false,
+  "widget-config": {
+    "notification-group": {
+      "spacing": 6
+    }
+  }
+}

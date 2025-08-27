@@ -1,0 +1,3 @@
+cbonsai -i -l --life=60 --color=17,18,27,39
+
+!! This is only a command

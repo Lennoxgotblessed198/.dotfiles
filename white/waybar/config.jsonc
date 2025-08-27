@@ -1,0 +1,82 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 46,
+  "margin-top":  10,
+  "margin-left": 20,
+  "margin-right": 20,
+  "modules-left": ["custom/arch", "clock#date", "custom/spotify"],
+  "modules-center": ["clock"],
+  "modules-right": ["custom/vram", "custom/cache", "disk", "cpu", "memory", "battery"],
+
+  // Left hand Side
+
+  "custom/arch": {
+    "format": "",
+  "tooltip": false,
+  "on-click": "bash -lc ~/.config/waybar/scripts/power_click.sh",
+  "on-double-click": "bash -lc ~/.config/waybar/scripts/power_click.sh"
+  },
+
+  "clock#date": {
+    "format": "{:%Y-%m-%d}",
+    "tooltip": false
+  },
+
+  "custom/spotify": {
+  "format": " {text}",
+  "return-type": "json",
+  "tooltip": false,
+  "hide-empty-text": true,
+  "exec": "bash -lc ~/.config/waybar/scripts/spotify.sh",
+  "interval": 5
+  },
+
+  // Middle
+
+  "clock": {
+  "format": "{:%H:%M}",
+    "tooltip": true
+  },
+
+  // Right Hand Side
+
+  "custom/cache": {
+    "format": "{icon} {text}",
+    "format-icons": { "default": "󰍛" },
+    "return-type": "json",
+    "hide-empty-text": true,
+    "exec": "bash -lc ~/.config/waybar/scripts/cache.sh",
+  "interval": 5,
+  "tooltip": true
+  },
+
+  "custom/vram": {
+    "format": "{icon} {text}",
+    "format-icons": { "amd": "󰍛" },
+    "return-type": "json",
+    "hide-empty-text": true,
+    "exec": "bash -lc ~/.config/waybar/scripts/vram.sh",
+    "interval": 5,
+    "tooltip": false
+  },
+
+  "disk": {
+    "path": "/",
+    "format": "󰋊 {used} / {total}",
+    "tooltip": false,
+    "format-icons": { "default": "󰋊" }
+  },
+
+  "cpu": {
+    "format": " {usage}%",
+    "tooltip": false,
+    "format-icons": { "default": "" }
+  },
+
+  "memory": {
+    "format": "󰍛 {used:0.1f}GB/{total:0.1f}GB",
+    "tooltip": false,
+    "format-icons": { "default": "󰍛" }
+  }
+}

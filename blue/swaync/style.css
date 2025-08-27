@@ -1,0 +1,36 @@
+* {
+    all: unset;
+    font-family: JetBrainsMono, sans-serif;
+    font-size: 14px;
+}
+
+.notification {
+    background-color: rgba(10, 22, 44, 0.9); /* dark navy */
+    border: 2px solid transparent;
+    border-radius: 12px;
+    border-image: linear-gradient(45deg, #0b2240, #1e3a8a) 1; /* dark blue -> blue */
+    padding: 12px;
+    margin: 10px;
+    color: #e6f0ff;
+}
+
+.notification-title {
+    font-weight: bold;
+    color: #e6f0ff;
+}
+
+.notification-body {
+    color: #c7d2fe; /* soft indigo */
+}
+
+.notification-action-button {
+    background-color: rgba(37, 99, 235, 0.12); /* blue tint */
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 5px 4px 0 0;
+    color: #e6f0ff;
+}
+
+.notification-action-button:hover {
+    background-color: rgba(37, 99, 235, 0.24);
+}

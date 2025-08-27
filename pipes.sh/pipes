@@ -1,3 +1,0 @@
-pipes.sh -p 3 -c 16 -c 238 -c 250 -c 15 -f 80 -s 12 -r 0 -R -B -K
-
-!! This is only the Pipes.sh command and already implementet into the zshrc

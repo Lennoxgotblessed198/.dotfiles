@@ -9,6 +9,10 @@ CONFIG_DIR="$HOME/.config"
 BACKUP_ROOT="$CONFIG_DIR/.dotfiles_backup_$(date +%Y%m%d-%H%M%S)"
 HAD_BACKUP=0
 ACTION="${1:-}"  # will be decided by menu if empty; supports: install | update | grub
+THEMES_DIR="$REPO_DIR/themes"
+CHOSEN_COLOR_PATH=""
+GRUB_THEMES_BASE="$REPO_DIR/boot_manager"
+GRUB_SELECTED_PATH=""
 
 C_RESET="\033[0m"; C_RED="\033[1;31m"; C_GREEN="\033[1;32m"; C_YELLOW="\033[1;33m"; C_BLUE="\033[1;34m"; C_CYAN="\033[1;36m"
 log()  { printf "%b[INFO]%b %s\n" "$C_CYAN" "$C_RESET" "$*"; }
@@ -68,6 +72,27 @@ preflight() {
 	printf "%b%s%b\n" "$C_CYAN" "This is an experimental setup script tailored for Arch-based systems." "$C_RESET"
 	printf "%b%s%b\n" "$C_CYAN" "For best results, you may also apply the files manually; this script automates those steps safely." "$C_RESET"
 
+	# Ask theme color early (before countdown)
+	case "$ACTION" in
+		install|update)
+			if [[ -z "$CHOSEN_COLOR_PATH" ]]; then
+				choose_color
+			fi
+			# For update, we may still need sudo to set default shell to zsh or install zsh if missing
+			if [[ "$ACTION" == "update" ]]; then
+				if ! require_cmd zsh || [[ "$(basename -- "${SHELL:-}")" != "zsh" ]]; then
+					printf "%b[AUTH]%b Requesting administrator privileges (sudo) to ensure zsh is installed and set as default...\n" "$C_BLUE" "$C_RESET"
+					sudo -v || { err "Sudo is required to ensure zsh"; exit 1; }
+				fi
+			fi
+			;;
+		grub)
+			if [[ -z "$GRUB_SELECTED_PATH" ]]; then
+				choose_grub_theme
+			fi
+			;;
+	esac
+
 	if [[ "$ACTION" == "update" ]]; then
 		printf "%b[PROMPT]%b Proceed with IN-PLACE config update (no package installation)? [y/N]: " "$C_YELLOW" "$C_RESET"
 	elif [[ "$ACTION" == "grub" ]]; then
@@ -83,6 +108,87 @@ preflight() {
 
 	log "Starting in..."
 	for n in 3 2 1; do log "$n..."; sleep 1; done
+}
+
+# --- Theme discovery & selection ---
+find_colors() {
+	local colors=()
+	if [[ -d "$THEMES_DIR" ]]; then
+		while IFS= read -r -d '' d; do
+			colors+=("$(basename "$d")")
+		done < <(find "$THEMES_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+	fi
+	# Fallback: top-level color dirs (exclude known base dirs)
+	if [[ ${#colors[@]} -eq 0 ]]; then
+		while IFS= read -r -d '' d; do
+			local name; name="$(basename "$d")"
+			case "$name" in
+				.git|themes|zsh|boot_manager|btop|cava|kitty|hypr|waybar|swaync|rofi) continue ;;
+			esac
+			colors+=("$name")
+		done < <(find "$REPO_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+	fi
+	echo "${colors[@]}"
+}
+
+choose_color() {
+	local colors=( $(find_colors) )
+	if [[ ${#colors[@]} -eq 0 ]]; then
+		warn "No theme color folders found. Using base configs."
+		CHOSEN_COLOR_PATH=""
+		return 0
+	fi
+	printf "%b%s%b\n" "$C_CYAN" "Available color themes:" "$C_RESET"
+	local i=1
+	for c in "${colors[@]}"; do printf "  %d) %s\n" "$i" "$c"; ((i++)); done
+	printf "%b[INPUT]%b Select color [1-%d]: " "$C_YELLOW" "$C_RESET" "${#colors[@]}"
+	local idx; read -r idx
+	if ! [[ "$idx" =~ ^[0-9]+$ ]] || (( idx < 1 || idx > ${#colors[@]} )); then
+		warn "Invalid selection; using base configs"
+		CHOSEN_COLOR_PATH=""
+		return 0
+	fi
+	local chosen="${colors[idx-1]}"
+	if [[ -d "$THEMES_DIR/$chosen" ]]; then
+		CHOSEN_COLOR_PATH="$THEMES_DIR/$chosen"
+	else
+		CHOSEN_COLOR_PATH="$REPO_DIR/$chosen"
+	fi
+	ok "Selected theme: $(basename "$CHOSEN_COLOR_PATH")"
+}
+
+# --- GRUB theme discovery & selection ---
+find_grub_themes() {
+	local candidates=()
+	# Common patterns: boot_manager/<theme>/install.sh OR boot_manager/**/install.sh
+	if [[ -d "$GRUB_THEMES_BASE" ]]; then
+		while IFS= read -r -d '' script; do
+			local dir; dir="$(dirname "$script")"
+			candidates+=("$dir")
+		done < <(find "$GRUB_THEMES_BASE" -type f -name "install.sh" -print0 2>/dev/null)
+	fi
+	echo "${candidates[@]}"
+}
+
+choose_grub_theme() {
+	local themes=( $(find_grub_themes) )
+	if [[ ${#themes[@]} -eq 0 ]]; then
+		warn "No GRUB themes with install.sh found under: $GRUB_THEMES_BASE"
+		GRUB_SELECTED_PATH=""
+		return 0
+	fi
+	printf "%b%s%b\n" "$C_CYAN" "Available GRUB themes:" "$C_RESET"
+	local i=1
+	for p in "${themes[@]}"; do printf "  %d) %s\n" "$i" "$(basename "$p")"; ((i++)); done
+	printf "%b[INPUT]%b Select GRUB theme [1-%d]: " "$C_YELLOW" "$C_RESET" "${#themes[@]}"
+	local idx; read -r idx
+	if ! [[ "$idx" =~ ^[0-9]+$ ]] || (( idx < 1 || idx > ${#themes[@]} )); then
+		warn "Invalid selection; skipping GRUB theme selection"
+		GRUB_SELECTED_PATH=""
+		return 0
+	fi
+	GRUB_SELECTED_PATH="${themes[idx-1]}"
+	ok "Selected GRUB theme: $(basename "$GRUB_SELECTED_PATH")"
 }
 
 ensure_dirs() {
@@ -247,6 +353,52 @@ install_aur_packages() {
 	fi
 }
 
+# Ensure zsh is installed and set as the default login shell for the current user
+ensure_zsh_ready() {
+	local need_sudo=0
+	if ! require_cmd zsh; then
+		if require_cmd pacman; then
+			log "Installing zsh"
+			sudo pacman -S --needed --noconfirm zsh
+			ok "zsh installed"
+		else
+			err "zsh not found and pacman not available; cannot install"
+			return 1
+		fi
+	fi
+
+	local zsh_path
+	zsh_path="$(command -v zsh)"
+	if [[ -z "$zsh_path" ]]; then
+		err "Failed to locate zsh after installation"
+		return 1
+	fi
+
+	# Ensure zsh is listed in /etc/shells
+	if ! grep -q "^$zsh_path$" /etc/shells 2>/dev/null; then
+		log "Registering $zsh_path in /etc/shells"
+		echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null || warn "Could not add $zsh_path to /etc/shells"
+	fi
+
+	# Set default shell to zsh for the invoking user
+	local target_user="$USER"
+	if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" ]]; then
+		target_user="$SUDO_USER"
+	fi
+	local current_shell
+	current_shell="$(getent passwd "$target_user" | cut -d: -f7 || echo "${SHELL:-}")"
+	if [[ "$current_shell" != "$zsh_path" ]]; then
+		log "Changing default shell for $target_user to $zsh_path"
+		if [[ "$target_user" == "$USER" ]]; then
+			chsh -s "$zsh_path" "$target_user" && ok "Default shell set to zsh"
+		else
+			sudo chsh -s "$zsh_path" "$target_user" && ok "Default shell set to zsh for $target_user"
+		fi
+	else
+		log "Default shell already zsh for $target_user"
+	fi
+}
+
 deploy_configs() {
 	ensure_dirs
 
@@ -285,10 +437,7 @@ deploy_configs() {
 	make_exec_in "$CONFIG_DIR/waybar/scripts"
 
 	# zsh
-	if [[ -f "$REPO_DIR/zsh/zshrc" ]]; then
-		copy_file "$REPO_DIR/zsh/zshrc" "$HOME/.zshrc"
-		ok "Installed .zshrc"
-	fi
+	# handled by deploy_base_configs
 }
 
 # In-place update of configs: only changed/missing files are copied; no mass backups.
@@ -330,9 +479,54 @@ update_configs() {
 	make_exec_in "$CONFIG_DIR/waybar/scripts"
 
 	# zsh
+	# handled by deploy_base_configs
+}
+
+# Deploy only the chosen color theme (copy/backup behavior)
+deploy_color_configs() {
+	ensure_dirs
+	local base="$1"
+	[[ -n "$base" && -d "$base" ]] || { warn "Theme path invalid: $base"; return 0; }
+	local comps=(hypr waybar rofi swaync kitty btop cava swaylock swaybg sway)
+	for c in "${comps[@]}"; do
+		if [[ -d "$base/$c" ]]; then
+			copy_dir "$base/$c" "$CONFIG_DIR/$c"
+			ok "Deployed $c (theme: $(basename "$base"))"
+		fi
+	done
+	make_exec_in "$CONFIG_DIR/rofi/scripts"
+	make_exec_in "$CONFIG_DIR/rofi/applets/bin"
+	make_exec_in "$CONFIG_DIR/waybar/scripts"
+}
+
+# Update only the chosen color theme (in-place; no mass deletes)
+update_color_configs() {
+	ensure_dirs
+	local base="$1"
+	[[ -n "$base" && -d "$base" ]] || { warn "Theme path invalid: $base"; return 0; }
+	local comps=(hypr waybar rofi swaync kitty btop cava swaylock swaybg sway)
+	for c in "${comps[@]}"; do
+		if [[ -d "$base/$c" ]]; then
+			update_copy_dir "$base/$c" "$CONFIG_DIR/$c"
+			ok "Updated $c (theme: $(basename "$base"))"
+		fi
+	done
+	make_exec_in "$CONFIG_DIR/rofi/scripts"
+	make_exec_in "$CONFIG_DIR/rofi/applets/bin"
+	make_exec_in "$CONFIG_DIR/waybar/scripts"
+}
+
+# Always-deployed base configs (non-themed)
+deploy_base_configs() {
+	# Always ensure zsh is present and default
+	ensure_zsh_ready || true
 	if [[ -f "$REPO_DIR/zsh/zshrc" ]]; then
 		update_copy_file "$REPO_DIR/zsh/zshrc" "$HOME/.zshrc"
-		ok "Updated .zshrc"
+		ok "Ensured ~/.zshrc"
+	fi
+	if [[ -d "$REPO_DIR/boot_manager" ]]; then
+		update_copy_dir "$REPO_DIR/boot_manager" "$CONFIG_DIR/boot_manager"
+		ok "Ensured boot_manager"
 	fi
 }
 
@@ -350,50 +544,36 @@ post_steps() {
 
 # Optionally install GRUB theme provided in this repo
 maybe_install_grub_theme() {
-	local theme_dir="$REPO_DIR/boot_manager/LainGrubTheme-1.0.1"
-	local install_sh="$theme_dir/install.sh"
-	local patch_sh="$theme_dir/patch_entries.sh"
+	local base_dir
+	base_dir="${1:-$GRUB_SELECTED_PATH}"
+	[[ -n "$base_dir" ]] || { warn "No GRUB theme selected."; return 0; }
+	local install_sh="$base_dir/install.sh"
+	local patch_sh="$base_dir/patch_entries.sh"
 
-	# If called with "force", skip prompt
-	local force="${1:-}"
-	if [[ "$force" != "force" ]]; then
-		printf "%b[PROMPT]%b Are you using GRUB as your boot manager and want to install the provided theme now? [y/N]: " "$C_YELLOW" "$C_RESET"
-		read -r reply
-		case "$reply" in
-			[yY]|[yY][eE][sS]) ;;
-			*) log "Skipping GRUB theme installation"; return 0 ;;
-		esac
+	# Ensure scripts exist
+	[[ -f "$install_sh" ]] || { warn "Missing: $install_sh"; return 0; }
+	[[ -f "$patch_sh" ]] || { warn "Missing: $patch_sh"; return 0; }
+	chmod +x "$install_sh" "$patch_sh" 2>/dev/null || true
+
+	# Inform user if GRUB may be missing (non-blocking)
+	if ! require_cmd grub-install && ! pacman -Q grub >/dev/null 2>&1 && [[ ! -d /boot/grub ]]; then
+		warn "GRUB may not be installed or detected on this system. Proceeding anyway as requested."
 	fi
 
-			if [[ ! -d "$theme_dir" ]]; then
-				warn "GRUB theme directory not found: $theme_dir"
-				return 0
-			fi
+	log "Running GRUB theme installer for: $(basename "$base_dir")"
+	if sudo bash "$install_sh"; then
+		ok "Theme installation script completed"
+	else
+		err "Theme installation failed"
+		return 1
+	fi
 
-			# Make sure scripts are executable and run them with sudo
-			[[ -f "$install_sh" ]] || { warn "Missing: $install_sh"; return 0; }
-			[[ -f "$patch_sh" ]] || { warn "Missing: $patch_sh"; return 0; }
-			chmod +x "$install_sh" "$patch_sh" 2>/dev/null || true
-
-			# Best-effort detection to inform the user (does not block)
-			if ! require_cmd grub-install && ! pacman -Q grub >/dev/null 2>&1 && [[ ! -d /boot/grub ]]; then
-				warn "GRUB may not be installed or detected on this system. Proceeding anyway as requested."
-			fi
-
-			log "Running GRUB theme installer (sudo may prompt for your password)"
-			if sudo bash "$install_sh"; then
-				ok "Theme installation script completed"
-			else
-				err "Theme installation failed"
-				return 1
-			fi
-
-			log "Patching GRUB entries"
-			if sudo bash "$patch_sh"; then
-				ok "GRUB entries patched"
-			else
-				warn "Patching GRUB entries failed"
-			fi
+	log "Patching GRUB entries"
+	if sudo bash "$patch_sh"; then
+		ok "GRUB entries patched"
+	else
+		warn "Patching GRUB entries failed"
+	fi
 	return 0
 }
 
@@ -401,16 +581,26 @@ main() {
 	log "Starting dotfiles setup from: $REPO_DIR (action: $ACTION)"
 	case "$ACTION" in
 		update)
-			update_configs
+			if [[ -n "$CHOSEN_COLOR_PATH" ]]; then
+				update_color_configs "$CHOSEN_COLOR_PATH"
+			else
+				update_configs
+			fi
+			deploy_base_configs
 			post_steps
 			;;
 		grub)
-			maybe_install_grub_theme force
+			maybe_install_grub_theme "$GRUB_SELECTED_PATH"
 			;;
 		install|*)
 			install_pacman_packages
 			install_aur_packages
-			deploy_configs
+			if [[ -n "$CHOSEN_COLOR_PATH" ]]; then
+				deploy_color_configs "$CHOSEN_COLOR_PATH"
+			else
+				deploy_configs
+			fi
+			deploy_base_configs
 			post_steps
 			;;
 	 esac

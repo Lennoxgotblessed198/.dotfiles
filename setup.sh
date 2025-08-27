@@ -105,7 +105,11 @@ copy_file() {
 	local src="$1" dest="$2"
 	backup_path "$dest"
 	mkdir -p "$(dirname "$dest")"
-	install -m 0644 "$src" "$dest"
+	if [[ "$dest" == *.sh ]]; then
+		install -m 0755 "$src" "$dest"
+	else
+		install -m 0644 "$src" "$dest"
+	fi
 }
 
 copy_dir() {
@@ -113,6 +117,10 @@ copy_dir() {
 	backup_path "$dest"
 	mkdir -p "$(dirname "$dest")"
 	cp -a "$src" "$dest"
+	# Ensure all shell scripts are executable after copy
+	if [[ -d "$dest" ]]; then
+		find "$dest" -type f -name "*.sh" -exec chmod +x {} + || true
+	fi
 }
 
 # Compare two files; return 0 if identical, 1 if different or missing
@@ -127,7 +135,11 @@ update_copy_file() {
 	local src="$1" dest="$2"
 	if [[ ! -e "$dest" ]]; then
 		mkdir -p "$(dirname "$dest")"
-		install -m 0644 "$src" "$dest"
+		if [[ "$dest" == *.sh ]]; then
+			install -m 0755 "$src" "$dest"
+		else
+			install -m 0644 "$src" "$dest"
+		fi
 		ok "Added: $dest"
 		return 0
 	fi
@@ -137,7 +149,11 @@ update_copy_file() {
 	fi
 	backup_path "$dest"
 	mkdir -p "$(dirname "$dest")"
-	install -m 0644 "$src" "$dest"
+	if [[ "$dest" == *.sh ]]; then
+		install -m 0755 "$src" "$dest"
+	else
+		install -m 0644 "$src" "$dest"
+	fi
 	ok "Updated: $dest"
 }
 

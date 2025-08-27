@@ -225,6 +225,44 @@ files_identical() {
 	cmp -s "$a" "$b" 2>/dev/null && return 0 || return 1
 }
 
+# Find the repository zshrc file supporting several common layouts
+find_repo_zshrc() {
+	local candidates=(
+		"$REPO_DIR/zsh/.zshrc"
+		"$REPO_DIR/zsh/zshrc"
+		"$REPO_DIR/.zshrc"
+		"$REPO_DIR/zshrc"
+	)
+	local f
+	for f in "${candidates[@]}"; do
+		if [[ -f "$f" ]]; then
+			printf '%s' "$f"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Find a theme-specific zshrc based on the selected color theme
+find_theme_zshrc() {
+	local base="$CHOSEN_COLOR_PATH"
+	[[ -n "$base" && -d "$base" ]] || return 1
+	local candidates=(
+		"$base/zsh/.zshrc"
+		"$base/.zshrc"
+		"$base/zsh/zshrc"
+		"$base/zshrc"
+	)
+	local f
+	for f in "${candidates[@]}"; do
+		if [[ -f "$f" ]]; then
+			printf '%s' "$f"
+			return 0
+		fi
+	done
+	return 1
+}
+
 update_copy_file() {
 	local src="$1" dest="$2"
 	if [[ ! -e "$dest" ]]; then
@@ -498,9 +536,23 @@ deploy_base_configs() {
 	if [[ "$ACTION" == "install" ]]; then
 		set_default_shell_zsh || true
 	fi
-	if [[ -f "$REPO_DIR/zsh/zshrc" ]]; then
-		update_copy_file "$REPO_DIR/zsh/zshrc" "$HOME/.zshrc"
-		ok "Ensured ~/.zshrc"
+	local DEST_ZSHRC="$HOME/.zshrc"
+	local SRC_ZSHRC=""
+	if SRC_ZSHRC="$(find_theme_zshrc)"; then
+		log "Using theme zshrc: $SRC_ZSHRC"
+	elif SRC_ZSHRC="$(find_repo_zshrc)"; then
+		log "Using repo zshrc: $SRC_ZSHRC"
+	else
+		warn "No zshrc found in theme or repo; skipping ~/.zshrc refresh"
+		SRC_ZSHRC=""
+	fi
+	if [[ -n "$SRC_ZSHRC" ]]; then
+		update_copy_file "$SRC_ZSHRC" "$DEST_ZSHRC"
+		if cmp -s "$SRC_ZSHRC" "$DEST_ZSHRC" 2>/dev/null; then
+			ok "Ensured ~/.zshrc"
+		else
+			warn "~/.zshrc differs after copy; manual check recommended"
+		fi
 	fi
 	if [[ -d "$REPO_DIR/boot_manager" ]]; then
 		update_copy_dir "$REPO_DIR/boot_manager" "$CONFIG_DIR/boot_manager"

@@ -41,16 +41,6 @@
 
   // Right Hand Side
 
-  "custom/cache": {
-    "format": "{icon} {text}",
-    "format-icons": { "default": "󰍛" },
-    "return-type": "json",
-    "hide-empty-text": true,
-    "exec": "bash -lc ~/.config/waybar/scripts/cache.sh",
-  "interval": 5,
-  "tooltip": true
-  },
-
   "custom/vram": {
     "format": "{icon} {text}",
     "format-icons": { "amd": "󰍛" },

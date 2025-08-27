@@ -1,17 +1,18 @@
 * {
     font-family: "JetBrainsMono Nerd Font", monospace;
     font-size: 13px;
-    border-radius: 8px;
+    border-radius: 0;
     padding: 4px 8px;
 }
 
 window#waybar {
-    background: rgba(0, 0, 0, 0.8);
+    background: linear-gradient(135deg, rgba(0, 0, 0,0.92), rgba(63, 63, 63, 0.92));
     border: 2px solid transparent;
-    border-image: linear-gradient(45deg, #D3D3D3, #2F2F2F) 1 stretch;
-    border-radius: 12px;
+    border-image: linear-gradient(45deg, #D3D3D3, #2f2f2f) 1 stretch;
+    border-radius: 0;
     margin: 20px 20px 0 20px;
 }
+
 #custom-arch {
     color: #ffffff;
     font-size: 16px;
@@ -32,11 +33,6 @@ window#waybar {
 #clock {
     color: #FFFFFF;
     font-weight: bold;
-}
-
-#custom-cache {
-    color: #D3D3D3;
-    margin-left: 12px;
 }
 
 #cpu, #memory, #disk, #battery {

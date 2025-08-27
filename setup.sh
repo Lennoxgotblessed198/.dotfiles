@@ -109,7 +109,7 @@ find_colors() {
 			colors+=("$(basename "$d")")
 		done < <(find "$THEMES_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
 	fi
-	# Fallback: top-level color dirs (exclude known base dirs)
+
 	if [[ ${#colors[@]} -eq 0 ]]; then
 		while IFS= read -r -d '' d; do
 			local name; name="$(basename "$d")"
@@ -225,7 +225,6 @@ files_identical() {
 	cmp -s "$a" "$b" 2>/dev/null && return 0 || return 1
 }
 
-# Find the repository zshrc file supporting several common layouts
 find_repo_zshrc() {
 	local candidates=(
 		"$REPO_DIR/zsh/.zshrc"
@@ -243,7 +242,6 @@ find_repo_zshrc() {
 	return 1
 }
 
-# Find a theme-specific zshrc based on the selected color theme
 find_theme_zshrc() {
 	local base="$CHOSEN_COLOR_PATH"
 	[[ -n "$base" && -d "$base" ]] || return 1

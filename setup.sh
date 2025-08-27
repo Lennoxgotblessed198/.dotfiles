@@ -210,12 +210,59 @@ post_steps() {
 	fi
 }
 
+# Optionally install GRUB theme provided in this repo
+maybe_install_grub_theme() {
+	local theme_dir="$REPO_DIR/boot_manager/LainGrubTheme-1.0.1"
+	local install_sh="$theme_dir/install.sh"
+	local patch_sh="$theme_dir/patch_entries.sh"
+
+	printf "%b[PROMPT]%b Are you using GRUB as your boot manager and want to install the provided theme now? [y/N]: " "$C_YELLOW" "$C_RESET"
+	read -r reply
+	case "$reply" in
+		[yY]|[yY][eE][sS])
+			if [[ ! -d "$theme_dir" ]]; then
+				warn "GRUB theme directory not found: $theme_dir"
+				return 0
+			fi
+
+			# Make sure scripts are executable and run them with sudo
+			[[ -f "$install_sh" ]] || { warn "Missing: $install_sh"; return 0; }
+			[[ -f "$patch_sh" ]] || { warn "Missing: $patch_sh"; return 0; }
+			chmod +x "$install_sh" "$patch_sh" 2>/dev/null || true
+
+			# Best-effort detection to inform the user (does not block)
+			if ! require_cmd grub-install && ! pacman -Q grub >/dev/null 2>&1 && [[ ! -d /boot/grub ]]; then
+				warn "GRUB may not be installed or detected on this system. Proceeding anyway as requested."
+			fi
+
+			log "Running GRUB theme installer (sudo may prompt for your password)"
+			if sudo bash "$install_sh"; then
+				ok "Theme installation script completed"
+			else
+				err "Theme installation failed"
+				return 1
+			fi
+
+			log "Patching GRUB entries"
+			if sudo bash "$patch_sh"; then
+				ok "GRUB entries patched"
+			else
+				warn "Patching GRUB entries failed"
+			fi
+			;;
+		*)
+			log "Skipping GRUB theme installation"
+			;;
+	esac
+}
+
 main() {
 	log "Starting dotfiles setup from: $REPO_DIR"
 	install_pacman_packages
 	install_aur_packages
 	deploy_configs
 	post_steps
+	maybe_install_grub_theme
 	if [[ "$HAD_BACKUP" -eq 1 ]]; then
 		warn "Existing configs were backed up to: $BACKUP_ROOT"
 	fi

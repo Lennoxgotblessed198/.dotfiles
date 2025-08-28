@@ -1,0 +1,45 @@
+* {
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    font-size: 13px;
+    border-radius: 0;
+    padding: 4px 8px;
+}
+
+window#waybar {
+    background: linear-gradient(135deg, #e49ab1 0%, #d0738a 60%, #a34e67 100%);
+    border: 2px solid #d0738a;
+    border-radius: 0;
+    margin: 20px 20px 0 20px;
+}
+
+#custom-arch {
+    color: #ffffff;
+    font-size: 16px;
+    padding-left: 10px;
+}
+
+#clock.date {
+    color: #ffffff;
+    font-weight: bold;
+}
+
+#custom-spotify {
+    color: #ffffff;
+    font-size: 16px;
+    padding-left: 10px;
+}
+
+#clock {
+    color: #ffffff;
+    font-weight: bold;
+}
+
+#cpu, #memory, #disk, #battery {
+    color: #ffffff;
+    margin-right: 12px;
+}
+
+#custom-vram {
+    color: #ffffff;
+    margin-left: 12px;
+}

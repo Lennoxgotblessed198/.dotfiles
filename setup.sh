@@ -333,6 +333,8 @@ install_pacman_packages() {
 			grim
 			slurp
 			brightnessctl
+			fzf
+			zoxide
 		)
 		log "Installing packages: ${pkgs[*]}"
 		sudo pacman -S --needed --noconfirm "${pkgs[@]}"

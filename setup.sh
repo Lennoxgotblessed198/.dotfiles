@@ -572,6 +572,226 @@ post_steps() {
 	fi
 }
 
+# Ensure Flatpak and Flathub are ready, then offer optional post-install apps and actions
+ensure_flathub() {
+	if ! require_cmd flatpak; then
+		warn "flatpak not installed; skipping Flatpak app prompts"
+		return 1
+	fi
+	if ! flatpak remotes | awk '{print $1}' | grep -qx "flathub"; then
+		log "Adding Flathub remote"
+		if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo; then
+			ok "Flathub remote added"
+		else
+			warn "Failed to add Flathub; Flatpak installs may not work"
+			return 1
+		fi
+	fi
+	return 0
+}
+
+flatpak_available() {
+	local app_id="$1"
+	flatpak remote-info --log flathub "$app_id" >/dev/null 2>&1
+}
+
+flatpak_install_app() {
+	local app_id="$1"
+	if ! require_cmd flatpak; then return 1; fi
+	if flatpak list --app | awk '{print $1}' | grep -qx "$app_id"; then
+		ok "Flatpak already installed: $app_id"
+		return 0
+	fi
+	log "Installing Flatpak: $app_id"
+	if flatpak install -y --noninteractive flathub "$app_id"; then
+		ok "Installed: $app_id"
+	else
+		warn "Failed to install: $app_id"
+		return 1
+	fi
+}
+
+post_install_questions_and_launch_zsh() {
+	# Only run these in an interactive TTY
+	if [[ ! -t 0 || ! -t 1 ]]; then
+		warn "Non-interactive session detected; skipping post-install prompts"
+		return 0
+	fi
+
+	ensure_flathub || true
+	if ! require_cmd flatpak; then
+		warn "flatpak not available; skipping app installation prompts"
+	else
+		# 1) Browser selection via Flatpak
+		local browsers=(
+			org.mozilla.firefox
+			org.chromium.Chromium
+			com.brave.Browser
+			com.vivaldi.Vivaldi
+			com.opera.Opera
+			io.gitlab.librewolf-community.librewolf
+		)
+		local available_browsers=()
+		for b in "${browsers[@]}"; do
+			if flatpak_available "$b"; then
+				available_browsers+=("$b")
+			fi
+		done
+		if [[ ${#available_browsers[@]} -gt 0 ]]; then
+			printf "%b%s%b\n" "$C_CYAN" "Choose a browser to install (Flatpak):" "$C_RESET"
+			local i=1
+			for b in "${available_browsers[@]}"; do
+				printf "  %d) %s\n" "$i" "$b"
+				((i++))
+			done
+			printf "  0) Skip\n"
+			printf "%b[PROMPT]%b Enter choice [0-%d]: " "$C_YELLOW" "$C_RESET" "${#available_browsers[@]}"
+			local choice
+			read -r choice || choice=0
+			if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#available_browsers[@]} )); then
+				flatpak_install_app "${available_browsers[choice-1]}" || true
+			else
+				log "Browser install skipped"
+			fi
+		else
+			warn "No known browsers found on Flathub index; skipping browser prompt"
+		fi
+
+		# 2) Discord or Vesktop via Flatpak
+		printf "%b%s%b\n" "$C_CYAN" "Install Discord or Vesktop (Flatpak)?" "$C_RESET"
+		local opt_discord="com.discordapp.Discord"
+		local opt_vesktop="dev.vencord.Vesktop"
+		local show_discord=0 show_vesktop=0
+		if flatpak_available "$opt_discord"; then show_discord=1; fi
+		if flatpak_available "$opt_vesktop"; then show_vesktop=1; fi
+		local menu_n=1
+		declare -A map_idx
+		if (( show_discord )); then
+			printf "  %d) %s\n" "$menu_n" "$opt_discord"; map_idx[$menu_n]="$opt_discord"; ((menu_n++))
+		fi
+		if (( show_vesktop )); then
+			printf "  %d) %s\n" "$menu_n" "$opt_vesktop"; map_idx[$menu_n]="$opt_vesktop"; ((menu_n++))
+		fi
+		printf "  0) Skip\n"
+		printf "%b[PROMPT]%b Enter choice [0-%d]: " "$C_YELLOW" "$C_RESET" "$((menu_n-1))"
+		local dv
+		read -r dv || dv=0
+		if [[ "$dv" =~ ^[0-9]+$ ]] && (( dv >= 1 && dv < menu_n )); then
+			flatpak_install_app "${map_idx[$dv]}" || true
+		else
+			log "Discord/Vesktop install skipped"
+		fi
+
+		# 3) Spotify via Flatpak
+		local spotify_id="com.spotify.Client"
+		if flatpak_available "$spotify_id"; then
+			printf "%b[PROMPT]%b Install Spotify (Flatpak)? [y/N]: " "$C_YELLOW" "$C_RESET"
+			local sp
+			read -r sp || sp=n
+			case "$sp" in
+				[yY]|[yY][eE][sS]) flatpak_install_app "$spotify_id" || true ;;
+				*) log "Spotify install skipped" ;;
+			esac
+		else
+			warn "Spotify not found on Flathub; skipping"
+		fi
+	fi
+
+	# 1) Browser selection via Flatpak
+	local browsers=(
+		org.mozilla.firefox
+		org.chromium.Chromium
+		com.brave.Browser
+		com.vivaldi.Vivaldi
+		com.opera.Opera
+		io.gitlab.librewolf-community.librewolf
+	)
+	local available_browsers=()
+	for b in "${browsers[@]}"; do
+		if flatpak_available "$b"; then
+			available_browsers+=("$b")
+		fi
+	done
+	if [[ ${#available_browsers[@]} -gt 0 ]]; then
+		printf "%b%s%b\n" "$C_CYAN" "Choose a browser to install (Flatpak):" "$C_RESET"
+		local i=1
+		for b in "${available_browsers[@]}"; do
+			printf "  %d) %s\n" "$i" "$b"
+			((i++))
+		done
+		printf "  0) Skip\n"
+		printf "%b[PROMPT]%b Enter choice [0-%d]: " "$C_YELLOW" "$C_RESET" "${#available_browsers[@]}"
+		local choice
+		read -r choice || choice=0
+		if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#available_browsers[@]} )); then
+			flatpak_install_app "${available_browsers[choice-1]}" || true
+		else
+			log "Browser install skipped"
+		fi
+	else
+		warn "No known browsers found on Flathub index; skipping browser prompt"
+	fi
+
+	# 2) Discord or Vesktop via Flatpak
+	printf "%b%s%b\n" "$C_CYAN" "Install Discord or Vesktop (Flatpak)?" "$C_RESET"
+	local opt_discord="com.discordapp.Discord"
+	local opt_vesktop="dev.vencord.Vesktop"
+	local show_discord=0 show_vesktop=0
+	if flatpak_available "$opt_discord"; then show_discord=1; fi
+	if flatpak_available "$opt_vesktop"; then show_vesktop=1; fi
+	local menu_n=1
+	declare -A map_idx
+	if (( show_discord )); then
+		printf "  %d) %s\n" "$menu_n" "$opt_discord"; map_idx[$menu_n]="$opt_discord"; ((menu_n++))
+	fi
+	if (( show_vesktop )); then
+		printf "  %d) %s\n" "$menu_n" "$opt_vesktop"; map_idx[$menu_n]="$opt_vesktop"; ((menu_n++))
+	fi
+	printf "  0) Skip\n"
+	printf "%b[PROMPT]%b Enter choice [0-%d]: " "$C_YELLOW" "$C_RESET" "$((menu_n-1))"
+	local dv
+	read -r dv || dv=0
+	if [[ "$dv" =~ ^[0-9]+$ ]] && (( dv >= 1 && dv < menu_n )); then
+		flatpak_install_app "${map_idx[$dv]}" || true
+	else
+		log "Discord/Vesktop install skipped"
+	fi
+
+	# 3) Spotify via Flatpak
+	local spotify_id="com.spotify.Client"
+	if flatpak_available "$spotify_id"; then
+		printf "%b[PROMPT]%b Install Spotify (Flatpak)? [y/N]: " "$C_YELLOW" "$C_RESET"
+		local sp
+		read -r sp || sp=n
+		case "$sp" in
+			[yY]|[yY][eE][sS]) flatpak_install_app "$spotify_id" || true ;;
+			*) log "Spotify install skipped" ;;
+		esac
+	else
+		warn "Spotify not found on Flathub; skipping"
+	fi
+
+	# Optional: install bootloader (GRUB theme) now
+	printf "%b[PROMPT]%b Do you want to directly install the bootloader theme now? [y/N]: " "$C_YELLOW" "$C_RESET"
+	local boot
+	read -r boot || boot=n
+	case "$boot" in
+		[yY]|[yY][eE][sS])
+			if [[ -z "$GRUB_SELECTED_PATH" ]]; then
+				choose_grub_theme
+			fi
+			maybe_install_grub_theme "$GRUB_SELECTED_PATH" || true
+			;;
+		*) log "Bootloader theme install skipped" ;;
+	esac
+
+	# Final message and launch zsh after delay
+	printf "%b%s%b\n" "$C_CYAN" "Restart after the Zsh Configuration" "$C_RESET"
+	sleep 5
+	log "Launching zsh..."
+	zsh || warn "Failed to launch zsh"
+}
+
 maybe_install_grub_theme() {
 	local base_dir
 	base_dir="${1:-$GRUB_SELECTED_PATH}"
@@ -636,6 +856,11 @@ main() {
 		warn "Existing configs were backed up to: $BACKUP_ROOT"
 	fi
 	ok "Action completed successfully"
+
+	# After a full install, run interactive prompts and launch zsh
+	if [[ "$ACTION" == "install" ]]; then
+		post_install_questions_and_launch_zsh || true
+	fi
 }
 
 choose_action

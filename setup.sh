@@ -369,6 +369,7 @@ install_aur_packages() {
 	local aur_pkgs=(
 		cbonsai
 		pipes.sh
+		visual-studio-code-bin
 	)
 	log "Installing AUR packages: ${aur_pkgs[*]}"
 	if yay -S --needed --noconfirm "${aur_pkgs[@]}"; then
@@ -695,80 +696,6 @@ post_install_questions_and_launch_zsh() {
 		else
 			warn "Spotify not found on Flathub; skipping"
 		fi
-	fi
-
-	# 1) Browser selection via Flatpak
-	local browsers=(
-		org.mozilla.firefox
-		org.chromium.Chromium
-		com.brave.Browser
-		com.vivaldi.Vivaldi
-		com.opera.Opera
-		io.gitlab.librewolf-community.librewolf
-	)
-	local available_browsers=()
-	for b in "${browsers[@]}"; do
-		if flatpak_available "$b"; then
-			available_browsers+=("$b")
-		fi
-	done
-	if [[ ${#available_browsers[@]} -gt 0 ]]; then
-		printf "%b%s%b\n" "$C_CYAN" "Choose a browser to install (Flatpak):" "$C_RESET"
-		local i=1
-		for b in "${available_browsers[@]}"; do
-			printf "  %d) %s\n" "$i" "$b"
-			((i++))
-		done
-		printf "  0) Skip\n"
-		printf "%b[PROMPT]%b Enter choice [0-%d]: " "$C_YELLOW" "$C_RESET" "${#available_browsers[@]}"
-		local choice
-		read -r choice || choice=0
-		if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#available_browsers[@]} )); then
-			flatpak_install_app "${available_browsers[choice-1]}" || true
-		else
-			log "Browser install skipped"
-		fi
-	else
-		warn "No known browsers found on Flathub index; skipping browser prompt"
-	fi
-
-	# 2) Discord or Vesktop via Flatpak
-	printf "%b%s%b\n" "$C_CYAN" "Install Discord or Vesktop (Flatpak)?" "$C_RESET"
-	local opt_discord="com.discordapp.Discord"
-	local opt_vesktop="dev.vencord.Vesktop"
-	local show_discord=0 show_vesktop=0
-	if flatpak_available "$opt_discord"; then show_discord=1; fi
-	if flatpak_available "$opt_vesktop"; then show_vesktop=1; fi
-	local menu_n=1
-	declare -A map_idx
-	if (( show_discord )); then
-		printf "  %d) %s\n" "$menu_n" "$opt_discord"; map_idx[$menu_n]="$opt_discord"; ((menu_n++))
-	fi
-	if (( show_vesktop )); then
-		printf "  %d) %s\n" "$menu_n" "$opt_vesktop"; map_idx[$menu_n]="$opt_vesktop"; ((menu_n++))
-	fi
-	printf "  0) Skip\n"
-	printf "%b[PROMPT]%b Enter choice [0-%d]: " "$C_YELLOW" "$C_RESET" "$((menu_n-1))"
-	local dv
-	read -r dv || dv=0
-	if [[ "$dv" =~ ^[0-9]+$ ]] && (( dv >= 1 && dv < menu_n )); then
-		flatpak_install_app "${map_idx[$dv]}" || true
-	else
-		log "Discord/Vesktop install skipped"
-	fi
-
-	# 3) Spotify via Flatpak
-	local spotify_id="com.spotify.Client"
-	if flatpak_available "$spotify_id"; then
-		printf "%b[PROMPT]%b Install Spotify (Flatpak)? [y/N]: " "$C_YELLOW" "$C_RESET"
-		local sp
-		read -r sp || sp=n
-		case "$sp" in
-			[yY]|[yY][eE][sS]) flatpak_install_app "$spotify_id" || true ;;
-			*) log "Spotify install skipped" ;;
-		esac
-	else
-		warn "Spotify not found on Flathub; skipping"
 	fi
 
 	# Optional: install bootloader (GRUB theme) now

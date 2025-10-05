@@ -18,6 +18,7 @@ These dotfiles are designed and tested on Arch-based systems (pacman). Other dis
 - Zsh: `zsh/`
 - GRUB theme (optional): `boot_manager/LainGrubTheme-1.0.1/`
 - Wallpapers: `hypr/wallpapers/` inside each colorway
+ - Dark mode enforcement script: `darkmode.sh` (forces apps/toolkits to prefer dark schemes without copying theme dirs)
 
 Colorways provided:
 - `blue/` — dark blue variant
@@ -120,6 +121,74 @@ This will call the theme’s own `install.sh` and `patch_entries.sh`. You’ll n
 - Rofi: set theme in `rofi/config.rasi`; color schemes live in `rofi/colors/`. Launchers and power menus are in `rofi/launchers/` and `rofi/powermenu/`.
 - Zsh: adjust `~/.zshrc` after deployment. The config expects zinit (see Credits).
 - Fonts: JetBrains Mono Nerd Font is installed by the script on Arch. On other distros, install your preferred Nerd Font and run `fc-cache -f`.
+
+---
+
+## Dark mode enforcement script (`darkmode.sh`)
+
+`darkmode.sh` ONLY enforces dark mode preferences for toolkits/apps. It does **not** deploy any theme directories or overwrite your Hyprland/Waybar/Rofi configs.
+
+What it adjusts (backing up touched files into `~/.config/.darkmode_backup_<timestamp>`):
+- GTK3 / GTK4: `gtk-theme-name` + `gtk-application-prefer-dark-theme=1` (default theme: `Adwaita-dark`, override with `--gtk-theme=`)
+- QT: writes `~/.config/environment.d/99-darkmode.conf` with dark style hints
+- Firefox: adds a small set of dark prefs to each profile's `user.js`
+- Chromium / Chrome / Brave: writes flags (`--force-dark-mode`, `--enable-features=WebUIDarkMode`)
+- GNOME (if present): tries `gsettings set org.gnome.desktop.interface color-scheme prefer-dark`
+- VS Code: untouched by default (enable with `--include-vscode`)
+
+### Usage
+
+Make executable (if needed):
+```sh
+chmod +x darkmode.sh
+```
+
+Apply default dark prefs:
+```sh
+./darkmode.sh
+```
+
+Preview without changing anything:
+```sh
+./darkmode.sh --dry-run
+```
+
+Choose a GTK theme:
+```sh
+./darkmode.sh --gtk-theme=Catppuccin-Mocha-Standard
+```
+
+Include VS Code:
+```sh
+./darkmode.sh --include-vscode
+```
+
+Skip components:
+```sh
+./darkmode.sh --no-firefox --no-chromium --no-gsettings
+```
+
+Force overwrite even if already dark:
+```sh
+./darkmode.sh --force
+```
+
+All options:
+```
+--gtk-theme=<NAME>    Use specific GTK theme name (default: Adwaita-dark)
+--dry-run             Show actions without modifying files
+--quiet               Reduce output
+--force               Overwrite existing values even if already dark
+--no-firefox          Skip Firefox profile modifications
+--no-chromium         Skip Chromium/Chrome/Brave flags
+--no-gtk              Skip GTK settings
+--no-qt               Skip QT environment override
+--no-gsettings        Skip gsettings (GNOME) tweak
+--include-vscode      ALSO set VS Code UI theme to a dark scheme (disabled by default)
+--help                Show usage
+```
+
+Backups: Look for the printed backup directory path after a run if you need to restore previous settings.
 
 ---
 
